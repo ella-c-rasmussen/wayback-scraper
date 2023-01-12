@@ -173,6 +173,7 @@ async def retrieve_pages(timestamp_list, uvURL):
                             failed_retrieves = failed_retrieves + 1
                     tail = tail + BATCH_SIZE
                     time.sleep(2)
+                # KeyboardInterrupt
                 except CancelledError:
                     print("Cancelled.")
                     exit()
@@ -184,7 +185,7 @@ async def retrieve_pages(timestamp_list, uvURL):
 
 # Make an asynchronous request for one Wayback Machine page. Creates a file from 
 # the entire HTML response.
-# Returns 1 if the file was successfully created, 
+# Returns 1 if the file was successfully created 
 #         2 if the page can't be reached
 #         0 if the Wayback CDX stored a duplicate snapshot.
 # params timestamp : the snapshot's Wayback Machine timestamp
