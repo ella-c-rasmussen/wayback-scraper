@@ -235,8 +235,7 @@ async def retrieve_pages(timestamp_list, uvURL):
 #        path : local path where the HTML file will be stored
 #        session : aiohttp asynchronous session
 async def create_file(timestamp, uvURL, path, session):
-    #url = 'https://web.archive.org/web/' + str(timestamp) + '/' + uvURL
-    url = 'https://httpbin.org/delay/1'
+    url = 'https://web.archive.org/web/' + str(timestamp) + '/' + uvURL
     async with session.get(url) as response:
         if response.status == 200:
             html_text = await response.text()
