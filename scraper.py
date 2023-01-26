@@ -6,11 +6,12 @@ from asyncio import CancelledError
 import aiohttp
 import time
 import sys
+import bs4
 
 def wayback_scrape():
     print("Enter an exact URL:")
     uvURL =  input()
-    headers = {"User-Agent": 'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:47.0) Gecko/20100101 Firefox/47.0'}
+    headers = {"User-Agent": 'Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0'}
     
     # Retrieve list of available snapshots from the Wayback CDX Server API
     url = 'http://web.archive.org/cdx/search/cdx?url=' + uvURL + '&output=json'
@@ -138,13 +139,41 @@ def create_directory(folder):
         else:
             flag = False
 
+# Create a valid Unix/Windows folder name from the site URL
+def create_folder_name(URL):
+    name = URL
+    if "http" in name:
+        name = name.split('/', 2)[2]
+    
+    forbidden_chars = ['<', '>', ':', '"', "'", '/', '\\', '|', '?', '*']
+    for char in forbidden_chars:
+        name = name.replace(char, '-')
+    return name
+
+# Create a separate folder and populate with text-only files for each snapshot.
+def pretty_text(path):
+    create_directory(path + '/' + 'text files')
+    
+    files = os.listdir(path)
+    for file in files[:-1]:
+        text_only = ""
+        with open(path + '/' + file, 'r') as f:
+            soup = bs4.BeautifulSoup(f, 'html.parser')
+            text_only = soup.get_text()
+        f.close()
+        
+        with open(path + '/' + 'text files/' + file[:-5] + '.txt', 'w') as txt_file:
+            txt_file.write(text_only)
+        txt_file.close()
+
 # Retrieve HTML page from the Wayback Machine for each timestamp. Store each in 
 # cwd/url/timestamp.
 # params timestamp_list : list of timestamps as integers in the format 
 #           YYYYMMDDHrHrMinMinSecSec
 #        uvURL : the URL the user entered
 async def retrieve_pages(timestamp_list, uvURL):
-    folder = uvURL.split('/')[0]
+    
+    folder = create_folder_name(uvURL)
     create_directory(folder)
     
     print(f"{len(timestamp_list)} snapshots found. Creating files in " + 
@@ -156,7 +185,7 @@ async def retrieve_pages(timestamp_list, uvURL):
     failed_retrieves = 0
     tail = 0
     flag = True
-    BATCH_SIZE = 13
+    BATCH_SIZE = 15
     async with aiohttp.ClientSession(trust_env = True) as session:
         while flag:
             if tail < len(timestamp_list):
@@ -182,10 +211,23 @@ async def retrieve_pages(timestamp_list, uvURL):
     
     print(f'{num_files} files created with {num_duplicates} duplicate snapshots'
         + f' and {failed_retrieves} failures.')
+    
+    print('Strip HTML and create plaintext files? [Y/N]')
+    pretty_flag = True
+    while pretty_flag == True:
+        response = input().upper()
+        if response == 'Y':
+            pretty_flag = False
+            print("Creating files in " + f'{os.getcwd()}\\{folder}\\text files...')
+            pretty_text(path)
+        elif response == 'N':
+            exit()
+        else:
+            print("Invalid response.")
 
 # Make an asynchronous request for one Wayback Machine page. Creates a file from 
 # the entire HTML response.
-# Returns 1 if the file was successfully created 
+# Returns 1 if the file was successfully created
 #         2 if the page can't be reached
 #         0 if the Wayback CDX stored a duplicate snapshot.
 # params timestamp : the snapshot's Wayback Machine timestamp
@@ -193,8 +235,8 @@ async def retrieve_pages(timestamp_list, uvURL):
 #        path : local path where the HTML file will be stored
 #        session : aiohttp asynchronous session
 async def create_file(timestamp, uvURL, path, session):
-    url = 'https://web.archive.org/web/' + str(timestamp) + '/' + uvURL
-    
+    #url = 'https://web.archive.org/web/' + str(timestamp) + '/' + uvURL
+    url = 'https://httpbin.org/delay/1'
     async with session.get(url) as response:
         if response.status == 200:
             html_text = await response.text()
