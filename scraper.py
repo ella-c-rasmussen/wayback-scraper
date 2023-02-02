@@ -11,7 +11,7 @@ import bs4
 def wayback_scrape():
     print("Enter an exact URL:")
     uvURL =  input()
-    headers = {"User-Agent": 'Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0'}
+    headers = {"User-Agent": 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36'}
     
     # Retrieve list of available snapshots from the Wayback CDX Server API
     url = 'http://web.archive.org/cdx/search/cdx?url=' + uvURL + '&output=json'
@@ -143,7 +143,7 @@ def create_directory(folder):
 def create_folder_name(URL):
     name = URL
     if "http" in name:
-        name = name.split('/', 2)[2]
+        name = name.split('/')[2]
     
     forbidden_chars = ['<', '>', ':', '"', "'", '/', '\\', '|', '?', '*']
     for char in forbidden_chars:
@@ -172,7 +172,6 @@ def pretty_text(path):
 #           YYYYMMDDHrHrMinMinSecSec
 #        uvURL : the URL the user entered
 async def retrieve_pages(timestamp_list, uvURL):
-    
     folder = create_folder_name(uvURL)
     create_directory(folder)
     
@@ -183,14 +182,16 @@ async def retrieve_pages(timestamp_list, uvURL):
     num_duplicates = 0
     num_files = 0
     failed_retrieves = 0
+    start = time.time()
     tail = 0
     flag = True
     BATCH_SIZE = 15
+    sem = asyncio.Semaphore(5)
     async with aiohttp.ClientSession(trust_env = True) as session:
         while flag:
             if tail < len(timestamp_list):
                 try:
-                    tasks = [create_file(timestamp, uvURL, path, session) 
+                    tasks = [create_file(timestamp, uvURL, path, session, sem)
                         for timestamp in timestamp_list[tail:tail+BATCH_SIZE]]
                     for task in asyncio.as_completed(tasks):
                         result = await task
@@ -201,17 +202,23 @@ async def retrieve_pages(timestamp_list, uvURL):
                         elif result == 2:
                             failed_retrieves = failed_retrieves + 1
                     tail = tail + BATCH_SIZE
-                    time.sleep(2)
+                    await asyncio.sleep(2)
                 # KeyboardInterrupt
                 except CancelledError:
                     print("Cancelled.")
+                    await session.close()
                     exit()
             else:
                 flag = False
     
     print(f'{num_files} files created with {num_duplicates} duplicate snapshots'
         + f' and {failed_retrieves} failures.')
+    print("Created in", time.time() - start, "seconds")
     
+    pretty_text_loop(folder, path)
+
+# Convert to text files
+def pretty_text_loop(folder, path):
     print('Strip HTML and create plaintext files? [Y/N]')
     pretty_flag = True
     while pretty_flag == True:
@@ -234,26 +241,29 @@ async def retrieve_pages(timestamp_list, uvURL):
 #        uvURL : original URL the user entered
 #        path : local path where the HTML file will be stored
 #        session : aiohttp asynchronous session
-async def create_file(timestamp, uvURL, path, session):
+async def create_file(timestamp, uvURL, path, session, sem):
     url = 'https://web.archive.org/web/' + str(timestamp) + '/' + uvURL
-    async with session.get(url) as response:
-        if response.status == 200:
-            html_text = await response.text()
-            page_path = path + str(timestamp) + '.html'
-            if not os.path.exists(page_path):
-                try:
-                    with open(page_path, 'w') as file:
-                        file.write(html_text)
-                    file.close()
-                except Exception as e:
-                    print(f'Failed to create file {os.getcwd()}\\{page_path}: {e}')
+    async with sem:
+        if sem.locked(): # allow other requests to resolve
+            await asyncio.sleep(2)
+        async with session.get(url) as response:
+            if response.status == 200:
+                html_text = await response.text()
+                page_path = path + str(timestamp) + '.html'
+                if not os.path.exists(page_path):
+                    try:
+                        with open(page_path, 'w') as file:
+                            file.write(html_text)
+                        file.close()
+                    except Exception as e:
+                        print(f'Failed to create file {os.getcwd()}\\{page_path}: {e}')
+                    else:
+                        return 1
                 else:
-                    return 1
+                    return 0
             else:
-                return 0
-        else:
-            print(f'Failed to retrieve snapshot {timestamp}. Response code {response.status}')
-            return 2
+                print(f'Failed to retrieve snapshot {timestamp}. Response code {response.status}')
+                return 2
 
 # Set async selector loop policy if running on Windows.
 def check_os():
@@ -262,3 +272,8 @@ def check_os():
 
 check_os()
 wayback_scrape()
+
+
+    
+    
+    
