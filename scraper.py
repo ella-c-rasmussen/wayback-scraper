@@ -8,6 +8,9 @@ import time
 import sys
 import bs4
 
+# Global variable for directory separator
+fd = '/'
+
 def wayback_scrape():
     print("Enter an exact URL:")
     uvURL =  input()
@@ -131,7 +134,7 @@ def create_directory(folder):
         try:
             os.mkdir(folder)
         except Exception as e:
-            print(f'Failed to create directory {os.getcwd()}\\{folder}: {e}')
+            print(f'Failed to create directory {os.getcwd()}{fd}{folder}: {e}')
             print("Try again? (Y/N)")
             response = input().upper()
             if response == "N":
@@ -152,19 +155,20 @@ def create_folder_name(URL):
 
 # Create a separate folder and populate with text-only files for each snapshot.
 def pretty_text(path):
-    create_directory(path + '/' + 'text files')
+    create_directory(path + 'text files')
     
     files = os.listdir(path)
-    for file in files[:-1]:
-        text_only = ""
-        with open(path + '/' + file, 'r') as f:
-            soup = bs4.BeautifulSoup(f, 'html.parser')
-            text_only = soup.get_text()
-        f.close()
-        
-        with open(path + '/' + 'text files/' + file[:-5] + '.txt', 'w') as txt_file:
-            txt_file.write(text_only)
-        txt_file.close()
+    for file in files:
+        if os.path.isfile(os.getcwd() + '/' + path + file):
+            text_only = ""
+            with open(path + '/' + file, 'r') as f:
+                soup = bs4.BeautifulSoup(f, 'html.parser')
+                text_only = soup.get_text()
+            f.close()
+            
+            with open(path + '/' + 'text files' + '/' + file[:-5] + '.txt', 'w') as txt_file:
+                txt_file.write(text_only)
+            txt_file.close()
 
 # Retrieve HTML page from the Wayback Machine for each timestamp. Store each in 
 # cwd/url/timestamp.
@@ -176,7 +180,7 @@ async def retrieve_pages(timestamp_list, uvURL):
     create_directory(folder)
     
     print(f"{len(timestamp_list)} snapshots found. Creating files in " + 
-        f'{os.getcwd()}\\{folder}...')
+        f'{os.getcwd()}{fd}{folder}...')
     path = folder + '/'
     
     num_duplicates = 0
@@ -186,14 +190,14 @@ async def retrieve_pages(timestamp_list, uvURL):
     tail = 0
     flag = True
     BATCH_SIZE = 15
-    sem = asyncio.Semaphore(5)
+    sem = asyncio.Semaphore(6)
     async with aiohttp.ClientSession(trust_env = True) as session:
         while flag:
             if tail < len(timestamp_list):
                 try:
                     tasks = [create_file(timestamp, uvURL, path, session, sem)
                         for timestamp in timestamp_list[tail:tail+BATCH_SIZE]]
-                    for task in asyncio.as_completed(tasks):
+                    for task in asyncio.as_completed(tasks, timeout=35):
                         result = await task
                         if result == 1:
                             num_files = num_files + 1
@@ -213,19 +217,21 @@ async def retrieve_pages(timestamp_list, uvURL):
     
     print(f'{num_files} files created with {num_duplicates} duplicate snapshots'
         + f' and {failed_retrieves} failures.')
-    print("Created in", time.time() - start, "seconds")
+    print("Done in", time.time() - start, "seconds")
     
-    pretty_text_loop(folder, path)
+    pretty_text_loop(folder, path, num_files)
 
-# Convert to text files
-def pretty_text_loop(folder, path):
-    print('Strip HTML and create plaintext files? [Y/N]')
+# Convert to text files.
+# params folder: directory storing the snapshots
+#        path: absolute path to the folder storing the snapshots
+def pretty_text_loop(folder, path, files):
+    print(f'Strip HTML and create {files} additional plaintext files? [Y/N]')
     pretty_flag = True
     while pretty_flag == True:
         response = input().upper()
         if response == 'Y':
             pretty_flag = False
-            print("Creating files in " + f'{os.getcwd()}\\{folder}\\text files...')
+            print("Creating files in " + f'{os.getcwd()}{fd}{folder}{fd}text files...')
             pretty_text(path)
         elif response == 'N':
             exit()
@@ -256,7 +262,7 @@ async def create_file(timestamp, uvURL, path, session, sem):
                             file.write(html_text)
                         file.close()
                     except Exception as e:
-                        print(f'Failed to create file {os.getcwd()}\\{page_path}: {e}')
+                        print(f'Failed to create file {os.getcwd()}{fd}{page_path}: {e}')
                     else:
                         return 1
                 else:
@@ -265,10 +271,13 @@ async def create_file(timestamp, uvURL, path, session, sem):
                 print(f'Failed to retrieve snapshot {timestamp}. Response code {response.status}')
                 return 2
 
-# Set async selector loop policy if running on Windows.
+# Set async selector loop policy if running on Windows. Update directory 
+# separator.
 def check_os():
     if sys.platform.startswith('win32'):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        global fd
+        fd = '\\'
 
 check_os()
 wayback_scrape()
