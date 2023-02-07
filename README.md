@@ -8,7 +8,7 @@ This makes the tool usable from any directory.
 
 To scrape a specific URL, run:  
 `wb-scraper scrape -u <exact URL>`  
-This retrieves the HTML snapshots the Wayback Machine has of that URL.  
+This retrieves the HTML snapshots the Wayback Machine has of that URL in the date range provided.  
 This command creates a new folder with the name of the website inside the directory the command is run in. HTML files are stored in this folder.
 
 ## Text Files
