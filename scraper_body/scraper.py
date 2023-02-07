@@ -1,5 +1,5 @@
 import urllib.request as urq
-import json
+from json import loads
 import os
 import asyncio
 from asyncio import CancelledError
@@ -11,16 +11,17 @@ import bs4
 # Global variable for directory separator
 fd = '/'
 
-def wayback_scrape():
-    print("Enter an exact URL:")
-    uvURL =  input()
+def wayback_scrape(URLin):
+    check_os()
+    
+    uvURL =  URLin
     headers = {"User-Agent": 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36'}
     
     # Retrieve list of available snapshots from the Wayback CDX Server API
     url = 'http://web.archive.org/cdx/search/cdx?url=' + uvURL + '&output=json'
     req = urq.Request(url, headers = headers)
     cdx_response = urq.urlopen(req).read()
-    url_list = json.loads(cdx_response)
+    url_list = loads(cdx_response)
     
     num_urls = len(url_list) - 1 # Subtract 1 entry for the header
     
@@ -71,7 +72,7 @@ def parse_timestamp(timestamp):
 
 # Retrieve a list dates within the date range specified by the user.
 # Returns a list of timestamps as integers.
-# params start : start date in format YYYYMMDD
+#        start : start date in format YYYYMMDD
 #        end : end date in format YYYYMMDD
 #        url_list : list of snapshots from the CDX server JSON response
 def find_date_range(start, end, url_list):
@@ -96,7 +97,7 @@ def find_date_range(start, end, url_list):
     return valid_dates
 
 # Get snapshots within the range of dates.
-# params url_list : list of snapshots from the CDX server JSON response
+#        url_list : list of snapshots from the CDX server JSON response
 #        uvURL : the URL the user entered
 def date_range(url_list, uvURL):
     flag = True
@@ -118,7 +119,7 @@ def date_range(url_list, uvURL):
     asyncio.run(retrieve_pages(dates, uvURL))
 
 # Get snapshots from all available timestamps.
-# params url_list : list of snapshots from the CDX server JSON response
+#        url_list : list of snapshots from the CDX server JSON response
 #        uvURL : the URL the user entered
 def all_captures(url_list, uvURL):
     timestamp_list = []
@@ -142,7 +143,7 @@ def create_directory(folder):
         else:
             flag = False
 
-# Create a valid Unix/Windows folder name from the site URL
+# Create a valid Unix/Windows folder name from the site URL.
 def create_folder_name(URL):
     name = URL
     if "http" in name:
@@ -153,26 +154,9 @@ def create_folder_name(URL):
         name = name.replace(char, '-')
     return name
 
-# Create a separate folder and populate with text-only files for each snapshot.
-def pretty_text(path):
-    create_directory(path + 'text files')
-    
-    files = os.listdir(path)
-    for file in files:
-        if os.path.isfile(os.getcwd() + '/' + path + file):
-            text_only = ""
-            with open(path + '/' + file, 'r') as f:
-                soup = bs4.BeautifulSoup(f, 'html.parser')
-                text_only = soup.get_text()
-            f.close()
-            
-            with open(path + '/' + 'text files' + '/' + file[:-5] + '.txt', 'w') as txt_file:
-                txt_file.write(text_only)
-            txt_file.close()
-
 # Retrieve HTML page from the Wayback Machine for each timestamp. Store each in 
 # cwd/url/timestamp.
-# params timestamp_list : list of timestamps as integers in the format 
+#        timestamp_list : list of timestamps as integers in the format 
 #           YYYYMMDDHrHrMinMinSecSec
 #        uvURL : the URL the user entered
 async def retrieve_pages(timestamp_list, uvURL):
@@ -189,15 +173,15 @@ async def retrieve_pages(timestamp_list, uvURL):
     start = time.time()
     tail = 0
     flag = True
-    BATCH_SIZE = 15
-    sem = asyncio.Semaphore(6)
+    BATCH_SIZE = 12
+    sem = asyncio.Semaphore(5)
     async with aiohttp.ClientSession(trust_env = True) as session:
         while flag:
             if tail < len(timestamp_list):
                 try:
                     tasks = [create_file(timestamp, uvURL, path, session, sem)
                         for timestamp in timestamp_list[tail:tail+BATCH_SIZE]]
-                    for task in asyncio.as_completed(tasks, timeout=35):
+                    for task in asyncio.as_completed(tasks, timeout=30):
                         result = await task
                         if result == 1:
                             num_files = num_files + 1
@@ -217,15 +201,16 @@ async def retrieve_pages(timestamp_list, uvURL):
     
     print(f'{num_files} files created with {num_duplicates} duplicate snapshots'
         + f' and {failed_retrieves} failures.')
-    print("Done in", time.time() - start, "seconds")
+    elapsed = time.time() - start
+    print('Done in %.2f seconds.' % elapsed)
     
     pretty_text_loop(folder, path, num_files)
 
 # Convert to text files.
-# params folder: directory storing the snapshots
+#        folder: directory storing the snapshots
 #        path: absolute path to the folder storing the snapshots
 def pretty_text_loop(folder, path, files):
-    print(f'Strip HTML and create {files} additional plaintext files? [Y/N]')
+    print(f'Strip HTML and create {files} additional text files? [Y/N]')
     pretty_flag = True
     while pretty_flag == True:
         response = input().upper()
@@ -238,12 +223,32 @@ def pretty_text_loop(folder, path, files):
         else:
             print("Invalid response.")
 
+# Create a separate folder and populate with text-only files for each snapshot.
+def pretty_text(path):
+    create_directory(path + 'text files')
+    file_counter = 0
+    
+    files = os.listdir(path)
+    for file in files:
+        if os.path.isfile(os.getcwd() + '/' + path + file):
+            text_only = ""
+            with open(path + '/' + file, 'r') as f:
+                soup = bs4.BeautifulSoup(f, 'html.parser')
+                text_only = soup.get_text()
+            f.close()
+            
+            with open(path + '/' + 'text files' + '/' + file[:-5] + '.txt', 'w') as txt_file:
+                txt_file.write(text_only)
+            txt_file.close()
+            file_counter += 1
+    print(f'{file_counter} files created.')
+
 # Make an asynchronous request for one Wayback Machine page. Creates a file from 
 # the entire HTML response.
 # Returns 1 if the file was successfully created
 #         2 if the page can't be reached
 #         0 if the Wayback CDX stored a duplicate snapshot.
-# params timestamp : the snapshot's Wayback Machine timestamp
+#        timestamp : the snapshot's Wayback Machine timestamp
 #        uvURL : original URL the user entered
 #        path : local path where the HTML file will be stored
 #        session : aiohttp asynchronous session
@@ -271,18 +276,11 @@ async def create_file(timestamp, uvURL, path, session, sem):
                 print(f'Failed to retrieve snapshot {timestamp}. Response code {response.status}')
                 return 2
 
-# Set async selector loop policy if running on Windows. Update directory 
+# Set async selector loop policy if running on Windows and update directory 
 # separator.
 def check_os():
     if sys.platform.startswith('win32'):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         global fd
         fd = '\\'
-
-check_os()
-wayback_scrape()
-
-
-    
-    
     
