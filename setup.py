@@ -12,8 +12,7 @@ st.setup(  name = 'wb-scraper',
            packages = st.find_packages(),
            install_requires = [requirements],
            python_requires = '>=3.9',
-           classifiers = ["Programming Language :: Python :: 3.9",
-                          "Private :: Do Not Upload"],
+           classifiers = ["Programming Language :: Python :: 3.9"],
            entry_points = ''' [console_scripts]
                               wb-scraper=wb_scraper:cli''')
 
